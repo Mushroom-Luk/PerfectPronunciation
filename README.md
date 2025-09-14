@@ -1,18 +1,24 @@
-# 💬 Chatbot template
+# Japanese Pronunciation Assessment App
 
-A simple Streamlit app that shows how to build a chatbot using OpenAI's GPT-3.5.
+A Streamlit application that provides detailed Japanese pronunciation assessment using Azure Speech Services.
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://chatbot-template.streamlit.app/)
+## Features
 
-### How to run it on your own machine
+- 🎤 **Audio Recording**: Record your Japanese pronunciation directly in the browser
+- 🔍 **Detailed Assessment**: Get accuracy, fluency, completeness, and overall scores
+- 📝 **Word-by-Word Analysis**: See which words need improvement
+- 🔤 **Phoneme-Level Feedback**: Detailed analysis of individual sounds
+- 📚 **Sample Texts**: Practice with beginner to advanced Japanese phrases
+- 💡 **Pronunciation Tips**: Get helpful tips for improving your Japanese
 
-1. Install the requirements
+## Setup Instructions
 
-   ```
-   $ pip install -r requirements.txt
-   ```
+### 1. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
 
-2. Run the app
+### 2. Run the app
 
    ```
    $ streamlit run streamlit_app.py
