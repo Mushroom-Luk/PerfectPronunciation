@@ -51,7 +51,7 @@ def fill_japanese_phonemes(word):
         result = kks.convert(word)
         if result:
             # Convert to phoneme-like representation
-            romaji = result[0]['hepburn']
+            romaji = result[0]['hira']
             return list(romaji)  # Simple character split as phonemes
     except:
         pass
