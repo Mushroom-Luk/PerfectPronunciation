@@ -53,7 +53,15 @@ class PronunciationAssessment:
                     'pronunciation_score': pronunciation_result.pronunciation_score,
                     'detailed_result': detailed_result
                 }
+            elif result.reason == speechsdk.ResultReason.Canceled:
+                # This block provides detailed error information for cancellations.
+                cancellation_details = result.cancellation_details
+                error_message = f"Recognition Canceled: {cancellation_details.reason}. "
+                if cancellation_details.reason == speechsdk.CancellationReason.Error:
+                    error_message += f"Error Details: {cancellation_details.error_details}"
+                return {'success': False, 'error': error_message}
             else:
+                # Handles other failure reasons like NoMatch
                 return {'success': False, 'error': f"Recognition failed: {result.reason}"}
 
         except Exception as e:
