@@ -6,3 +6,4 @@ pydub
 jaconv
 cutlet
 pykakasi
+cutlet
