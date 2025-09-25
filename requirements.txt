@@ -1,8 +1,8 @@
-streamlit>=1.28.0
-azure-cognitiveservices-speech>=1.37.0
-pydub>=0.25.0
-streamlit-audiorecorder>=0.0.5
-requests>=2.31.0
-jaconv>=0.3.4
-cutlet>=0.1.19
-pykakasi>=2.2.1
+streamlit
+azure-cognitiveservices-speech
+pydub
+streamlit-audiorecorder
+requests
+jaconv
+cutlet
+pykakasi
