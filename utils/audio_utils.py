@@ -12,9 +12,11 @@ def convert_audio_format(audio_input, input_format="webm", output_format="wav"):
         else:
             audio = AudioSegment.from_file(io.BytesIO(audio_input), format=input_format)
 
-        audio = audio.set_frame_rate(16000).set_channels(1)
+        # ENSURE AZURE-COMPATIBLE FORMAT
+        audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)  # 16-bit
+
         output_buffer = io.BytesIO()
-        audio.export(output_buffer, format=output_format)
+        audio.export(output_buffer, format=output_format, parameters=["-acodec", "pcm_s16le"])
         output_buffer.seek(0)
         return output_buffer.getvalue()
     except Exception as e:

@@ -3,6 +3,7 @@ import json
 import streamlit as st
 
 from config import *
+import os
 
 
 class JapanesePronunciationAssessment:
@@ -21,6 +22,13 @@ class JapanesePronunciationAssessment:
     def assess_pronunciation(self, audio_file_path, reference_text):
         """Assess pronunciation using Azure Speech Service."""
         try:
+
+            if not os.path.exists(audio_file_path):
+                return {'success': False, 'error': 'Audio file not found'}
+
+            if os.path.getsize(audio_file_path) == 0:
+                return {'success': False, 'error': 'Audio file is empty'}
+
             # Create audio config
             audio_config = speechsdk.audio.AudioConfig(filename=audio_file_path)
 
@@ -64,6 +72,17 @@ class JapanesePronunciationAssessment:
                     'completeness_score': pronunciation_result.completeness_score,
                     'pronunciation_score': pronunciation_result.pronunciation_score,
                     'detailed_result': detailed_result
+                }
+            elif result.reason == speechsdk.ResultReason.Canceled:
+                # GET DETAILED CANCELLATION INFO
+                cancellation = result.cancellation_details
+                error_details = result.properties.get(speechsdk.PropertyId.SpeechServiceResponse_JsonResult,
+                                                      "No details")
+                return {
+                    'success': False,
+                    'error': f"Recognition canceled: {cancellation.reason}",
+                    'error_details': f"Error code: {cancellation.error_code}, Details: {cancellation.error_details}",
+                    'json_details': error_details
                 }
             else:
                 error_details = result.properties.get(speechsdk.PropertyId.SpeechServiceResponse_JsonResult,
