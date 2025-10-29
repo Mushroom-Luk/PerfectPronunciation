@@ -1,4 +1,15 @@
+import sys
+import os
 import streamlit as st
+
+# --- Path Correction ---
+# Add the project root directory to the Python path
+# This ensures that the 'utils' module can be found when run on Streamlit Cloud
+project_root = os.path.dirname(os.path.abspath(__file__))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+# ---------------------
+
 from audiorecorder import audiorecorder
 from utils.speech_service import PronunciationAssessment, generate_speech_audio, parse_text_with_poe
 from utils.audio_utils import convert_audio_format, save_audio_to_temp_file, cleanup_temp_file, get_audio_duration
