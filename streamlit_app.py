@@ -141,7 +141,7 @@ def display_combined_assessment_results(assessment_data):
             st.error("More practice needed.")
 
 
-def handle_concurrent_processing(audio_data, text, language, max_duration, audio_key, assessment_key, autoplay_key):
+def handle_concurrent_processing(audio_data, text, language, max_duration, audio_key, assessment_key):
     """
     Handles concurrent audio generation and pronunciation assessment.
     This function is called from the main thread and BLOCKS until all tasks are complete.
@@ -155,8 +155,8 @@ def handle_concurrent_processing(audio_data, text, language, max_duration, audio
         st.success(f"✅ Recorded: {duration:.1f}s. Processing now...")
 
         tasks_to_run = {}
-        if not st.session_state.get(assessment_key):
-            tasks_to_run['assessment'] = (assess_pronunciation, text, audio_data, language)
+        tasks_to_run['assessment'] = (assess_pronunciation, text, audio_data, language)
+
         if not st.session_state.get(audio_key):
             tasks_to_run['audio_gen'] = (generate_speech_audio, text, language)
 
@@ -174,7 +174,6 @@ def handle_concurrent_processing(audio_data, text, language, max_duration, audio
                         st.session_state[assessment_key] = result
                     elif task_name == 'audio_gen':
                         st.session_state[audio_key] = result
-                        st.session_state[autoplay_key] = result
                 except Exception as exc:
                     error_message = f'Task {task_name} generated an exception: {exc}'
                     st.error(error_message)
@@ -184,15 +183,20 @@ def handle_concurrent_processing(audio_data, text, language, max_duration, audio
 
 def display_audio_and_results(audio_key, assessment_key, autoplay_key):
     """Unified logic for displaying audio player and assessment results."""
+    # --- CHANGE ---: Decoupled the autoplay logic from the main audio player display.
+    # First, handle autoplay if requested. This injects a hidden audio tag.
     if st.session_state.get(autoplay_key):
         audio_url = st.session_state[autoplay_key]
         st.markdown(f'<audio src="{audio_url}" autoplay style="display:none;"></audio>', unsafe_allow_html=True)
-        st.audio(audio_url)
+        # We only need the autoplay audio once, so we remove it after injecting it.
         del st.session_state[autoplay_key]
 
-    elif st.session_state.get(audio_key):
+    # Second, ALWAYS display the standard audio player if the TTS audio exists.
+    # The `elif` was removed to prevent the player from disappearing during autoplay.
+    if st.session_state.get(audio_key):
         st.audio(st.session_state[audio_key])
 
+    # Third, display the assessment results if they exist.
     if st.session_state.get(assessment_key):
         display_combined_assessment_results(st.session_state[assessment_key])
 
@@ -219,7 +223,6 @@ def render_speaking_mode():
                 if cols[i].button(text, key=f"{language}_{level}_{i}"):
                     st.session_state.selected_text = text
                     st.session_state.is_breakdown_view = False
-                    st.session_state.processed_audio_hash = None
                     st.rerun()
 
     reference_text = st.text_area("Enter text to practice:",
@@ -230,7 +233,6 @@ def render_speaking_mode():
         # --- BREAKDOWN VIEW ---
         if st.button("⬅️ Practice as Full Text"):
             st.session_state.is_breakdown_view = False
-            st.session_state.processed_audio_hash = None
             st.rerun()
 
         st.subheader("Practice Sentences")
@@ -241,6 +243,7 @@ def render_speaking_mode():
                 audio_key = f'audio_speak_chunk_{i}'
                 assessment_key = f'assessment_result_speak_chunk_{i}'
                 autoplay_key = f'autoplay_audio_chunk_{i}'
+                processed_hash_key = f'processed_hash_{assessment_key}'
 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -254,33 +257,33 @@ def render_speaking_mode():
                             st.session_state[autoplay_key] = st.session_state[audio_key]
                             st.rerun()
 
-                if audio_data and hash(audio_data) != st.session_state.get('processed_audio_hash'):
-                    # --- NEW LOGIC ---
-                    # A new recording is available. Clear old results to trigger re-assessment.
+                if audio_data and hash(audio_data) != st.session_state.get(processed_hash_key):
                     if assessment_key in st.session_state: del st.session_state[assessment_key]
-                    if audio_key in st.session_state: del st.session_state[audio_key]
-                    if autoplay_key in st.session_state: del st.session_state[autoplay_key]
+                    st.session_state[processed_hash_key] = hash(audio_data)
 
-                    st.session_state['processed_audio_hash'] = hash(audio_data)
-                    with st.spinner("🔄 Assessing your recording..."):
+                    with st.spinner("Processing your recording..."):
                         handle_concurrent_processing(audio_data, sentence, language, MAX_CHUNK_RECORDING_DURATION,
-                                                     audio_key, assessment_key, autoplay_key)
-                    st.rerun()
-                else:
-                    display_audio_and_results(audio_key, assessment_key, autoplay_key)
+                                                     audio_key, assessment_key)
+
+                    # --- CHANGE ---: After processing, trigger autoplay of the TTS audio and rerun.
+                    if st.session_state.get(audio_key):
+                        st.session_state[autoplay_key] = st.session_state[audio_key]
+                        st.rerun()
+
+                display_audio_and_results(audio_key, assessment_key, autoplay_key)
 
     else:
         # --- FULL TEXT VIEW ---
         if st.button("⏬ Breakdown into Sentences", disabled=not reference_text.strip()):
             st.session_state.speaking_chunks = split_text_into_sentences(reference_text)
             st.session_state.is_breakdown_view = True
-            st.session_state.processed_audio_hash = None
             st.rerun()
 
         if reference_text.strip():
             audio_key = f'audio_full_{hash(reference_text)}'
             assessment_key = 'assessment_result_full'
             autoplay_key = f'autoplay_audio_full'
+            processed_hash_key = f'processed_hash_{assessment_key}'
 
             col1, col2 = st.columns([1, 1])
             with col1:
@@ -295,20 +298,20 @@ def render_speaking_mode():
                         st.session_state[autoplay_key] = st.session_state[audio_key]
                         st.rerun()
 
-            if audio_data and hash(audio_data) != st.session_state.get('processed_audio_hash'):
-                # --- NEW LOGIC ---
-                # A new recording is available. Clear old results to trigger re-assessment.
+            if audio_data and hash(audio_data) != st.session_state.get(processed_hash_key):
                 if assessment_key in st.session_state: del st.session_state[assessment_key]
-                if audio_key in st.session_state: del st.session_state[audio_key]
-                if autoplay_key in st.session_state: del st.session_state[autoplay_key]
+                st.session_state[processed_hash_key] = hash(audio_data)
 
-                st.session_state['processed_audio_hash'] = hash(audio_data)
-                with st.spinner("🔄 Assessing your recording..."):
+                with st.spinner("Processing your recording..."):
                     handle_concurrent_processing(audio_data, reference_text, language, MAX_RECORDING_DURATION,
-                                                 audio_key, assessment_key, autoplay_key)
-                st.rerun()
-            else:
-                display_audio_and_results(audio_key, assessment_key, autoplay_key)
+                                                 audio_key, assessment_key)
+
+                # --- CHANGE ---: After processing, trigger autoplay of the TTS audio and rerun.
+                if st.session_state.get(audio_key):
+                    st.session_state[autoplay_key] = st.session_state[audio_key]
+                    st.rerun()
+
+            display_audio_and_results(audio_key, assessment_key, autoplay_key)
 
 
 def render_translation_mode():
@@ -330,7 +333,6 @@ def render_translation_mode():
         with st.spinner("Parsing text..."):
             chunks = parse_text_with_poe(multi_lang_input, display_lang, speak_lang)
             st.session_state.translation_chunks = chunks if chunks else []
-            st.session_state.processed_audio_hash = None
             if chunks:
                 st.success(f"✅ Successfully parsed into {len(chunks)} chunks.")
             else:
@@ -348,6 +350,7 @@ def render_translation_mode():
                 audio_key = f'audio_chunk_display_{i}'
                 assessment_key = f'assessment_result_chunk_{i}'
                 autoplay_key = f'autoplay_audio_translation_chunk_{i}'
+                processed_hash_key = f'processed_hash_{assessment_key}'
 
                 with st.expander(f"Reveal and Listen to text ({speak_lang})"):
                     st.write(speak_text)
@@ -361,20 +364,20 @@ def render_translation_mode():
 
                 audio_data = audiorecorder("🎙️ Record to Speak", "⏹️ Stop", key=f"recorder_chunk_{i}")
 
-                if audio_data and hash(audio_data) != st.session_state.get('processed_audio_hash'):
-                    # --- NEW LOGIC ---
-                    # A new recording is available. Clear old results to trigger re-assessment.
+                if audio_data and hash(audio_data) != st.session_state.get(processed_hash_key):
                     if assessment_key in st.session_state: del st.session_state[assessment_key]
-                    if audio_key in st.session_state: del st.session_state[audio_key]
-                    if autoplay_key in st.session_state: del st.session_state[autoplay_key]
+                    st.session_state[processed_hash_key] = hash(audio_data)
 
-                    st.session_state['processed_audio_hash'] = hash(audio_data)
-                    with st.spinner("🔄 Assessing your recording..."):
+                    with st.spinner("Processing your recording..."):
                         handle_concurrent_processing(audio_data, speak_text, speak_lang, MAX_CHUNK_RECORDING_DURATION,
-                                                     audio_key, assessment_key, autoplay_key)
-                    st.rerun()
-                else:
-                    display_audio_and_results(audio_key, assessment_key, autoplay_key)
+                                                     audio_key, assessment_key)
+
+                    # --- CHANGE ---: After processing, trigger autoplay of the TTS audio and rerun.
+                    if st.session_state.get(audio_key):
+                        st.session_state[autoplay_key] = st.session_state[audio_key]
+                        st.rerun()
+
+                display_audio_and_results(audio_key, assessment_key, autoplay_key)
 
 
 # --- Main Application Logic ---
@@ -390,14 +393,11 @@ def main():
     if 'translation_chunks' not in st.session_state: st.session_state.translation_chunks = []
     if 'speaking_chunks' not in st.session_state: st.session_state.speaking_chunks = []
     if 'is_breakdown_view' not in st.session_state: st.session_state.is_breakdown_view = False
-    if 'processed_audio_hash' not in st.session_state: st.session_state.processed_audio_hash = None
 
-    def reset_view_and_audio_hash():
+    def reset_view_state():
         st.session_state.is_breakdown_view = False
-        st.session_state.processed_audio_hash = None
 
-    st.radio("Select Mode", ["Speaking", "Translation"], key='mode', horizontal=True,
-             on_change=reset_view_and_audio_hash)
+    st.radio("Select Mode", ["Speaking", "Translation"], key='mode', horizontal=True, on_change=reset_view_state)
     st.divider()
 
     if st.session_state.mode == "Speaking":
