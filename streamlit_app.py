@@ -23,8 +23,9 @@ st.set_page_config(page_title=PAGE_TITLE, page_icon=PAGE_ICON, layout=LAYOUT)
 st.markdown("""
 <style>
     .metric-card {
-        background-color: #f8f9fa; padding: 0.3rem; border-radius: 0.3rem;
-        border-left: 3px solid; margin: 0.1rem; text-align: center;
+        background-color: #f8f9fa; padding: 1rem; border-radius: 0.5rem;
+        border-left: 5px solid; margin: 0.1rem; text-align: center;
+        height: 100%; display: flex; flex-direction: column; justify-content: center;
     }
     .success-card { border-left-color: #28a745; }
     .warning-card { border-left-color: #ffc107; }
@@ -44,9 +45,9 @@ st.markdown("""
         font-size: 0.85rem;
     }
     @media (max-width: 768px) {
-        .metric-card { padding: 0.2rem; }
-        .metric-card h3 { font-size: 0.8rem; margin: 0; }
-        .metric-card h2 { font-size: 1.2rem; margin: 0; }
+        .metric-card { padding: 0.5rem; }
+        .metric-card h3 { font-size: 1rem; margin: 0; }
+        .metric-card h2 { font-size: 2rem; margin: 0; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -85,33 +86,78 @@ def assess_pronunciation(reference_text, audio_data, language):
             return None
 
 
-def display_assessment_results(assessment_data):
-    """Displays assessment results from a given data dictionary."""
-    if not assessment_data: return
+def display_combined_assessment_results(assessment_data):
+    """Displays a combined and simplified view of the assessment results."""
+    if not assessment_data:
+        return
 
-    result = assessment_data['result']
+    # 1. Extract data from the assessment dictionary
+    data = assessment_data
+    result = data.get('result', {})
+    reference_text = data.get('reference_text', '')
+    language = data.get('language', 'English')
+    assessor = data.get('assessor')
+
+    if not result or not assessor:
+        st.warning("Assessment data is incomplete.")
+        return
+
     st.subheader("📊 Assessment Results")
-    scores = [
-        ("Accuracy", result.get('accuracy_score', 0)), ("Fluency", result.get('fluency_score', 0)),
-        ("Completeness", result.get('completeness_score', 0)), ("Overall", result.get('pronunciation_score', 0))
-    ]
-    cols = st.columns(4)
-    for i, (label, score) in enumerate(scores):
-        color = "success-card" if score >= 80 else "warning-card" if score >= 60 else "error-card"
-        with cols[i]:
-            st.markdown(f'<div class="metric-card {color}"><h3>{label}</h3><h2>{score:.0f}</h2></div>',
-                        unsafe_allow_html=True)
 
-    st.write("**🗣️ You said:** ", result.get('recognized_text', 'No speech detected'))
-    overall_score = result.get('pronunciation_score', 0)
-    if overall_score >= 90:
-        st.success("🎉 Excellent pronunciation!")
-    elif overall_score >= 80:
-        st.success("👍 Good pronunciation with minor improvements needed")
-    elif overall_score >= 70:
-        st.warning("📈 Focus on clarity and rhythm")
-    else:
-        st.error("🔄 More practice needed - speak slower and clearer")
+    # --- Component 1: Word Analysis ---
+    if 'detailed_result' in result:
+        words_assessment = assessor.get_word_level_assessment(result['detailed_result'])
+        if words_assessment:
+            st.write("**📝 Word Analysis**")
+            word_html = "".join([
+                f'<span class="{"word-correct" if w["accuracy_score"] >= 80 else "word-partial" if w["accuracy_score"] >= 60 else "word-incorrect"}">{w["word"]}</span> '
+                for w in words_assessment
+            ])
+            st.markdown(word_html, unsafe_allow_html=True)
+        else:
+            st.write("**📝 Word Analysis:** Not available for this assessment.")
+
+    st.divider()
+
+    # --- Create columns for the other components ---
+    col1, col2 = st.columns([2, 1])  # Give more space to text column
+
+    with col1:
+        # --- Component 2: You spoke ---
+        st.write("**🗣️ You said:**")
+        st.write(result.get('recognized_text', 'No speech detected'))
+
+        # --- Component 3: Reference text ---
+        st.write("**📖 Reference:**")
+        if language == "Japanese":
+            words_with_romaji = get_romanization_with_words(reference_text, language)
+            st.markdown("".join(
+                [f'<span class="japanese-word" title="{romaji}">{word}</span>' for word, romaji in words_with_romaji]),
+                unsafe_allow_html=True)
+        else:
+            st.write(reference_text)
+
+    with col2:
+        # --- Component 4: Overall score (with colored) ---
+        overall_score = result.get('pronunciation_score', 0)
+        color = "success-card" if overall_score >= 80 else "warning-card" if overall_score >= 60 else "error-card"
+
+        st.markdown(f"""
+        <div class="metric-card {color}">
+            <h3 style="margin-bottom: 0.2rem;">Overall Score</h3>
+            <h2 style="font-size: 2.5rem; margin-top: 0;">{overall_score:.0f}</h2>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Optional: Add a small text feedback based on score
+        if overall_score >= 90:
+            st.success("🎉 Excellent!")
+        elif overall_score >= 80:
+            st.info("👍 Good job!")
+        elif overall_score >= 60:
+            st.warning("Needs practice.")
+        else:
+            st.error("More practice needed.")
 
 
 # --- UI Rendering Functions for Modes ---
@@ -178,7 +224,7 @@ def render_speaking_mode():
                             st.session_state[f'assessment_result_speak_chunk_{i}'] = assessment_result
 
                 if f'assessment_result_speak_chunk_{i}' in st.session_state:
-                    display_assessment_results(st.session_state[f'assessment_result_speak_chunk_{i}'])
+                    display_combined_assessment_results(st.session_state[f'assessment_result_speak_chunk_{i}'])
 
     else:
         # --- FULL TEXT VIEW ---
@@ -215,8 +261,7 @@ def render_speaking_mode():
                         st.session_state['assessment_result_full'] = assessment_result
 
         if 'assessment_result_full' in st.session_state:
-            # Use the more detailed display for the full text assessment
-            display_assessment_results_detailed(st.session_state.assessment_result_full)
+            display_combined_assessment_results(st.session_state.assessment_result_full)
 
 
 def render_translation_mode():
@@ -230,7 +275,6 @@ def render_translation_mode():
     display_lang = st.session_state.translation_display_language
     speak_lang = st.session_state.translation_speak_language
 
-    # Generate dynamic placeholder text based on selected languages
     placeholder_text = get_translation_placeholder_text(display_lang, speak_lang)
 
     multi_lang_input = st.text_area(
@@ -256,7 +300,6 @@ def render_translation_mode():
 
                 with st.expander(f"Reveal text to speak ({speak_lang})"):
                     st.write(chunk['speak'])
-                    # Listen to Display Text
                     if st.button(f"🔊 Listen", key=f"gen_audio_display_{i}"):
                         with st.spinner("Generating audio..."):
                             audio_url = generate_speech_audio(chunk['speak'], speak_lang)
@@ -278,41 +321,7 @@ def render_translation_mode():
                             st.session_state[f'assessment_result_chunk_{i}'] = assessment_result
 
                 if f'assessment_result_chunk_{i}' in st.session_state:
-                    display_assessment_results(st.session_state[f'assessment_result_chunk_{i}'])
-
-
-def display_assessment_results_detailed(assessment_data):
-    """A more detailed version of the display function, used for the full-text assessment."""
-    if not assessment_data: return
-
-    data = assessment_data
-    result, reference_text, language, assessor = data['result'], data['reference_text'], data['language'], data[
-        'assessor']
-
-    st.subheader("📊 Assessment Results")
-    words_assessment = assessor.get_word_level_assessment(result['detailed_result'])
-    if words_assessment:
-        st.write("**📝 Word Analysis:**")
-        word_html = "".join([
-                                f'<span class="{"word-correct" if w["accuracy_score"] >= 80 else "word-partial" if w["accuracy_score"] >= 60 else "word-incorrect"}">{w["word"]}</span> '
-                                for w in words_assessment])
-        st.markdown(word_html, unsafe_allow_html=True)
-
-    display_assessment_results(assessment_data)  # Display common elements like scores
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("**📖 Reference:**")
-        if language == "Japanese":
-            words_with_romaji = get_romanization_with_words(reference_text, language)
-            st.markdown("".join(
-                [f'<span class="japanese-word" title="{romaji}">{word}</span>' for word, romaji in words_with_romaji]),
-                        unsafe_allow_html=True)
-        else:
-            st.write(reference_text)
-    with col2:
-        st.write("**🗣️ You said:**")
-        st.write(result.get('recognized_text', 'No speech detected'))
+                    display_combined_assessment_results(st.session_state[f'assessment_result_chunk_{i}'])
 
 
 # --- Main Application Logic ---
