@@ -11,20 +11,24 @@ LANGUAGE_CONFIG = {
     "English": {"locale": "en-US", "icon": "🇺🇸"},
     "Mandarin": {"locale": "zh-CN", "icon": "🇨🇳"},
     "Cantonese": {"locale": "zh-HK", "icon": "🇭🇰"},
-    "German": {"locale": "de-DE", "icon": "🇩🇪"}
+    "German": {"locale": "de-DE", "icon": "🇩🇪"},
+    "French": {"code": "fr-FR","voice": "fr-FR-DeniseNeural","icon": "🇫🇷"}
 }
 
-# Audio Settings
-SAMPLE_RATE = 16000
-MAX_RECORDING_DURATION = 60  # 1 minute
+# --- Audio Recording Configuration ---
+MAX_RECORDING_DURATION = 60  # seconds for full text
+MAX_CHUNK_RECORDING_DURATION = 20 # seconds for sentence chunks
+
+# --- Application Configuration ---
+PAGE_TITLE = "Pronunciation Practice"
+PAGE_ICON = "🗣️"
+LAYOUT = "centered"
+
+# --- AI Parsing Configuration ---
+POE_MODEL = "Grok-4-Fast-Non-Reasoning"
 
 # Assessment Settings
 GRADING_SYSTEM = "HundredMark"
 GRANULARITY = "Phoneme"
 ENABLE_MISCUE = True
 ENABLE_PROSODY = True
-
-# UI Configuration
-PAGE_TITLE = "Multilingual Pronunciation Assessment"
-PAGE_ICON = "🗣️"
-LAYOUT = "centered"
