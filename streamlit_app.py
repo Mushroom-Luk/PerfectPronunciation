@@ -3,8 +3,6 @@ import os
 import streamlit as st
 
 # --- Path Correction ---
-# Add the project root directory to the Python path
-# This ensures that the 'utils' module can be found when run on Streamlit Cloud
 project_root = os.path.dirname(os.path.abspath(__file__))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
@@ -34,16 +32,7 @@ st.markdown("""
     .word-partial { background-color: #fff3cd; color: #856404; padding: 3px 8px; margin: 2px; border-radius: 4px; display: inline-block; }
     .word-incorrect { background-color: #f8d7da; color: #721c24; padding: 3px 8px; margin: 2px; border-radius: 4px; display: inline-block; }
     .japanese-word { cursor: pointer; margin: 0 2px; }
-    .phoneme-container { border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin: 5px 0; background-color: #fafafa; }
-    .phoneme-scores { display: flex; justify-content: space-around; font-weight: bold; margin-bottom: 5px; font-size: 0.9rem; }
-    .phoneme-letters { display: flex; justify-content: space-around; font-family: monospace; font-size: 1.1rem; }
-    .phoneme-score { color: #666; }
-    .phoneme-letter { color: #333; }
     .stButton>button { width: 100%; }
-    .chunk-container { border: 1px solid #e0e0e0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
-    textarea[aria-label="Paste bilingual text here and click Parse."]::placeholder {
-        font-size: 0.85rem;
-    }
     @media (max-width: 768px) {
         .metric-card { padding: 0.5rem; }
         .metric-card h3 { font-size: 1rem; margin: 0; }
@@ -91,7 +80,6 @@ def display_combined_assessment_results(assessment_data):
     if not assessment_data:
         return
 
-    # 1. Extract data from the assessment dictionary
     data = assessment_data
     result = data.get('result', {})
     reference_text = data.get('reference_text', '')
@@ -104,7 +92,6 @@ def display_combined_assessment_results(assessment_data):
 
     st.subheader("📊 Assessment Results")
 
-    # --- Component 1: Word Analysis ---
     if 'detailed_result' in result:
         words_assessment = assessor.get_word_level_assessment(result['detailed_result'])
         if words_assessment:
@@ -118,16 +105,11 @@ def display_combined_assessment_results(assessment_data):
             st.write("**📝 Word Analysis:** Not available for this assessment.")
 
     st.divider()
-
-    # --- Create columns for the other components ---
-    col1, col2 = st.columns([2, 1])  # Give more space to text column
+    col1, col2 = st.columns([2, 1])
 
     with col1:
-        # --- Component 2: You spoke ---
         st.write("**🗣️ You said:**")
         st.write(result.get('recognized_text', 'No speech detected'))
-
-        # --- Component 3: Reference text ---
         st.write("**📖 Reference:**")
         if language == "Japanese":
             words_with_romaji = get_romanization_with_words(reference_text, language)
@@ -138,18 +120,14 @@ def display_combined_assessment_results(assessment_data):
             st.write(reference_text)
 
     with col2:
-        # --- Component 4: Overall score (with colored) ---
         overall_score = result.get('pronunciation_score', 0)
         color = "success-card" if overall_score >= 80 else "warning-card" if overall_score >= 60 else "error-card"
-
         st.markdown(f"""
         <div class="metric-card {color}">
-            <h3 style="margin-bottom: 0.2rem;">Overall Score</h3>
-            <h2 style="font-size: 2.5rem; margin-top: 0;">{overall_score:.0f}</h2>
+            <h3>Overall Score</h3>
+            <h2>{overall_score:.0f}</h2>
         </div>
         """, unsafe_allow_html=True)
-
-        # Optional: Add a small text feedback based on score
         if overall_score >= 90:
             st.success("🎉 Excellent!")
         elif overall_score >= 80:
@@ -158,6 +136,48 @@ def display_combined_assessment_results(assessment_data):
             st.warning("Needs practice.")
         else:
             st.error("More practice needed.")
+
+
+def handle_automatic_processing(audio_data, text, language, max_duration, audio_key, assessment_key, autoplay_key):
+    """Unified logic for post-recording processing."""
+    duration = get_audio_duration(audio_data)
+    if duration > max_duration:
+        st.warning(f"⚠️ Recording too long ({duration:.1f}s). Max is {max_duration}s.")
+        return
+
+    if duration > 0:
+        st.success(f"✅ Recorded: {duration:.1f}s. Processing now...")
+
+        assessment_result = assess_pronunciation(text, audio_data, language)
+        st.session_state[assessment_key] = assessment_result
+
+        if not st.session_state.get(audio_key):
+            with st.spinner("🎼 Creating reference audio..."):
+                st.session_state[audio_key] = generate_speech_audio(text, language)
+
+        if st.session_state.get(audio_key):
+            st.session_state[autoplay_key] = st.session_state[audio_key]
+
+        st.rerun()
+
+
+def display_audio_and_results(audio_key, assessment_key, autoplay_key):
+    """Unified logic for displaying audio player and assessment results."""
+    # Autoplay is handled first
+    if st.session_state.get(autoplay_key):
+        audio_url = st.session_state[autoplay_key]
+        st.markdown(f'<audio src="{audio_url}" autoplay style="display:none;"></audio>', unsafe_allow_html=True)
+        st.audio(audio_url)
+        # Unset flag after use to prevent re-playing on other interactions
+        del st.session_state[autoplay_key]
+
+    # If not autoplaying, but audio exists, show the standard player
+    elif st.session_state.get(audio_key):
+        st.audio(st.session_state[audio_key])
+
+    # Display assessment results if available
+    if st.session_state.get(assessment_key):
+        display_combined_assessment_results(st.session_state[assessment_key])
 
 
 # --- UI Rendering Functions for Modes ---
@@ -181,18 +201,19 @@ def render_speaking_mode():
             for i, text in enumerate(texts):
                 if cols[i].button(text, key=f"{language}_{level}_{i}"):
                     st.session_state.selected_text = text
-                    st.session_state.is_breakdown_view = False  # Reset view
+                    st.session_state.is_breakdown_view = False
+                    st.session_state.processed_audio_hash = None  # Reset flag
                     st.rerun()
 
     reference_text = st.text_area("Enter text to practice:",
                                   value=st.session_state.get('selected_text', sample_texts['Beginner'][0]), height=100,
                                   key="main_text_input")
 
-    # --- View Toggle: Full Text vs. Breakdown ---
     if st.session_state.get('is_breakdown_view', False):
         # --- BREAKDOWN VIEW ---
         if st.button("⬅️ Practice as Full Text"):
             st.session_state.is_breakdown_view = False
+            st.session_state.processed_audio_hash = None  # Reset flag
             st.rerun()
 
         st.subheader("Practice Sentences")
@@ -200,68 +221,63 @@ def render_speaking_mode():
             with st.container(border=True):
                 st.markdown(f"**Sentence {i + 1}:** `{sentence}`")
 
+                audio_key = f'audio_speak_chunk_{i}'
+                assessment_key = f'assessment_result_speak_chunk_{i}'
+                autoplay_key = f'autoplay_audio_chunk_{i}'
+
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("🔊 Listen", key=f"speak_chunk_listen_{i}"):
-                        with st.spinner("Generating audio..."):
-                            audio_url = generate_speech_audio(sentence, language)
-                            st.session_state[f'audio_speak_chunk_{i}'] = audio_url if audio_url else None
-
-                if f'audio_speak_chunk_{i}' in st.session_state and st.session_state[f'audio_speak_chunk_{i}']:
-                    st.audio(st.session_state[f'audio_speak_chunk_{i}'])
-
-                with col2:
                     audio_data = audiorecorder("🎙️ Record", "⏹️ Stop", key=f"recorder_speak_chunk_{i}")
+                with col2:
+                    if st.button("🔊 Listen", key=f"speak_chunk_listen_{i}"):
+                        if not st.session_state.get(audio_key):
+                            with st.spinner("Generating audio..."):
+                                st.session_state[audio_key] = generate_speech_audio(sentence, language)
+                        if st.session_state.get(audio_key):
+                            st.session_state[autoplay_key] = st.session_state[audio_key]
+                            st.rerun()
 
-                if audio_data:
-                    duration = get_audio_duration(audio_data)
-                    if duration > MAX_CHUNK_RECORDING_DURATION:
-                        st.warning(f"⚠️ Recording too long ({duration:.1f}s). Max is {MAX_CHUNK_RECORDING_DURATION}s.")
-                    elif duration > 0:
-                        st.success(f"✅ Recorded: {duration:.1f}s")
-                        if st.button("🔍 Assess", key=f"assess_speak_chunk_{i}"):
-                            assessment_result = assess_pronunciation(sentence, audio_data, language)
-                            st.session_state[f'assessment_result_speak_chunk_{i}'] = assessment_result
+                # THE FIX: Check hash of audio data, not its ID
+                if audio_data and hash(audio_data) != st.session_state.get('processed_audio_hash'):
+                    st.session_state['processed_audio_hash'] = hash(audio_data)
+                    handle_automatic_processing(audio_data, sentence, language, MAX_CHUNK_RECORDING_DURATION, audio_key,
+                                                assessment_key, autoplay_key)
 
-                if f'assessment_result_speak_chunk_{i}' in st.session_state:
-                    display_combined_assessment_results(st.session_state[f'assessment_result_speak_chunk_{i}'])
+                display_audio_and_results(audio_key, assessment_key, autoplay_key)
 
     else:
         # --- FULL TEXT VIEW ---
         if st.button("⏬ Breakdown into Sentences", disabled=not reference_text.strip()):
             st.session_state.speaking_chunks = split_text_into_sentences(reference_text)
             st.session_state.is_breakdown_view = True
+            st.session_state.processed_audio_hash = None  # Reset flag
             st.rerun()
 
         if reference_text.strip():
+            audio_key = f'audio_full_{hash(reference_text)}'
+            assessment_key = 'assessment_result_full'
+            autoplay_key = f'autoplay_audio_full'
+
             col1, col2 = st.columns([1, 1])
             with col1:
-                st.write("**🎤 Record (max 60s):**")
                 audio_data = audiorecorder("🎙️ Record", "⏹️ Stop",
                                            key=f"recorder_full_{language}_{hash(reference_text)}")
             with col2:
-                st.write("**🔊 Listen:**")
-                if st.button("🎵 Generate Audio", key="gen_audio_full"):
-                    with st.spinner("🎼 Creating audio..."):
-                        audio_url = generate_speech_audio(reference_text, language)
-                        st.session_state[f'audio_full_{hash(reference_text)}'] = audio_url if audio_url else None
+                if st.button("🔊 Listen", key="listen_full"):
+                    if not st.session_state.get(audio_key):
+                        with st.spinner("🎼 Creating audio..."):
+                            st.session_state[audio_key] = generate_speech_audio(reference_text, language)
+                    if st.session_state.get(audio_key):
+                        st.session_state[autoplay_key] = st.session_state[audio_key]
+                        st.rerun()
 
-            audio_key = f'audio_full_{hash(reference_text)}'
-            if audio_key in st.session_state and st.session_state[audio_key]:
-                st.audio(st.session_state[audio_key])
+            # THE FIX: Check hash of audio data, not its ID
+            if audio_data and hash(audio_data) != st.session_state.get('processed_audio_hash'):
+                st.session_state['processed_audio_hash'] = hash(audio_data)
+                handle_automatic_processing(audio_data, reference_text, language, MAX_RECORDING_DURATION, audio_key,
+                                            assessment_key, autoplay_key)
 
-            if audio_data:
-                duration = get_audio_duration(audio_data)
-                if duration > MAX_RECORDING_DURATION:
-                    st.warning(f"⚠️ Recording too long ({duration:.1f}s). Max is {MAX_RECORDING_DURATION}s.")
-                elif duration > 0:
-                    st.success(f"✅ Recorded: {duration:.1f}s")
-                    if st.button("🔍 Assess", type="primary"):
-                        assessment_result = assess_pronunciation(reference_text, audio_data, language)
-                        st.session_state['assessment_result_full'] = assessment_result
-
-        if 'assessment_result_full' in st.session_state:
-            display_combined_assessment_results(st.session_state.assessment_result_full)
+            display_audio_and_results(audio_key, assessment_key, autoplay_key)
 
 
 def render_translation_mode():
@@ -274,54 +290,53 @@ def render_translation_mode():
 
     display_lang = st.session_state.translation_display_language
     speak_lang = st.session_state.translation_speak_language
-
     placeholder_text = get_translation_placeholder_text(display_lang, speak_lang)
 
     multi_lang_input = st.text_area(
-        "Paste bilingual text here and click Parse.", height=200,
-        placeholder=placeholder_text
-    )
+        "Paste bilingual text here and click Parse.", height=200, placeholder=placeholder_text)
 
     if st.button("🤖 Parse with AI", type="primary"):
-        chunks = parse_text_with_poe(multi_lang_input, display_lang, speak_lang)
-        st.session_state.translation_chunks = chunks if chunks else []
-        if chunks:
-            st.success(f"✅ Successfully parsed into {len(chunks)} chunks.")
-        else:
-            st.error("Failed to parse text. Please check the format or try again.")
+        with st.spinner("Parsing text..."):
+            chunks = parse_text_with_poe(multi_lang_input, display_lang, speak_lang)
+            st.session_state.translation_chunks = chunks if chunks else []
+            st.session_state.processed_audio_hash = None  # Reset flag
+            if chunks:
+                st.success(f"✅ Successfully parsed into {len(chunks)} chunks.")
+            else:
+                st.error("Failed to parse text. Please check the format or try again.")
+            st.rerun()
 
     if st.session_state.get('translation_chunks'):
         st.subheader("Practice Chunks")
         for i, chunk in enumerate(st.session_state.translation_chunks):
             with st.container(border=True):
                 st.markdown(f"**Display ({display_lang}):** `{chunk['display']}`")
-
                 st.divider()
 
-                with st.expander(f"Reveal text to speak ({speak_lang})"):
-                    st.write(chunk['speak'])
-                    if st.button(f"🔊 Listen", key=f"gen_audio_display_{i}"):
-                        with st.spinner("Generating audio..."):
-                            audio_url = generate_speech_audio(chunk['speak'], speak_lang)
-                            st.session_state[f'audio_chunk_display_{i}'] = audio_url if audio_url else None
+                speak_text = chunk['speak']
+                audio_key = f'audio_chunk_display_{i}'
+                assessment_key = f'assessment_result_chunk_{i}'
+                autoplay_key = f'autoplay_audio_translation_chunk_{i}'
 
-                    if f'audio_chunk_display_{i}' in st.session_state and st.session_state[f'audio_chunk_display_{i}']:
-                        st.audio(st.session_state[f'audio_chunk_display_{i}'])
+                with st.expander(f"Reveal and Listen to text ({speak_lang})"):
+                    st.write(speak_text)
+                    if st.button(f"🔊 Listen", key=f"gen_audio_display_{i}"):
+                        if not st.session_state.get(audio_key):
+                            with st.spinner("Generating audio..."):
+                                st.session_state[audio_key] = generate_speech_audio(speak_text, speak_lang)
+                        if st.session_state.get(audio_key):
+                            st.session_state[autoplay_key] = st.session_state[audio_key]
+                            st.rerun()
 
                 audio_data = audiorecorder("🎙️ Record to Speak", "⏹️ Stop", key=f"recorder_chunk_{i}")
 
-                if audio_data:
-                    duration = get_audio_duration(audio_data)
-                    if duration > MAX_CHUNK_RECORDING_DURATION:
-                        st.warning(f"⚠️ Recording too long ({duration:.1f}s). Max is {MAX_CHUNK_RECORDING_DURATION}s.")
-                    elif duration > 0:
-                        st.success(f"✅ Recorded: {duration:.1f}s")
-                        if st.button("🔍 Assess", key=f"assess_chunk_{i}"):
-                            assessment_result = assess_pronunciation(chunk['speak'], audio_data, speak_lang)
-                            st.session_state[f'assessment_result_chunk_{i}'] = assessment_result
+                # THE FIX: Check hash of audio data, not its ID
+                if audio_data and hash(audio_data) != st.session_state.get('processed_audio_hash'):
+                    st.session_state['processed_audio_hash'] = hash(audio_data)
+                    handle_automatic_processing(audio_data, speak_text, speak_lang, MAX_CHUNK_RECORDING_DURATION,
+                                                audio_key, assessment_key, autoplay_key)
 
-                if f'assessment_result_chunk_{i}' in st.session_state:
-                    display_combined_assessment_results(st.session_state[f'assessment_result_chunk_{i}'])
+                display_audio_and_results(audio_key, assessment_key, autoplay_key)
 
 
 # --- Main Application Logic ---
@@ -330,7 +345,7 @@ def main():
     """Main function to run the Streamlit app."""
     st.title(f"{PAGE_ICON} {PAGE_TITLE}")
 
-    # Initialize session state for caching
+    # Initialize session state for caching and loop prevention
     if 'mode' not in st.session_state: st.session_state.mode = "Speaking"
     if 'speaking_language' not in st.session_state: st.session_state.speaking_language = "Japanese"
     if 'translation_display_language' not in st.session_state: st.session_state.translation_display_language = "English"
@@ -338,9 +353,15 @@ def main():
     if 'translation_chunks' not in st.session_state: st.session_state.translation_chunks = []
     if 'speaking_chunks' not in st.session_state: st.session_state.speaking_chunks = []
     if 'is_breakdown_view' not in st.session_state: st.session_state.is_breakdown_view = False
+    # THE FIX: Initialize the hash variable
+    if 'processed_audio_hash' not in st.session_state: st.session_state.processed_audio_hash = None
+
+    def reset_view_and_audio_hash():
+        st.session_state.is_breakdown_view = False
+        st.session_state.processed_audio_hash = None  # Reset flag on mode change
 
     st.radio("Select Mode", ["Speaking", "Translation"], key='mode', horizontal=True,
-             on_change=lambda: st.session_state.update(is_breakdown_view=False))
+             on_change=reset_view_and_audio_hash)
     st.divider()
 
     if st.session_state.mode == "Speaking":
